@@ -1,14 +1,11 @@
-from flask.testing import FlaskClient
-from typing import Optional
-
 import flask
 import graphene
 import graphql.language.ast as graphql_ast
-import pytest
-from flask import Flask, Response, json
+from flask import Response
 from graphene.test import format_execution_result, default_format_error
 from graphql import GraphQLScalarType, GraphQLEnumType, GraphQLObjectType
 from graphql_server import encode_execution_results, json_encode
+from typing import Optional
 
 
 class GraphQLREST(object):
@@ -67,14 +64,21 @@ class GraphQLREST(object):
                 [
                     graphql_ast.OperationDefinition(
                         operation='query',
+                        name=graphql_ast.Name(field_name),
+                        variable_definitions=[
+                            # TODO get these from field
+                            graphql_ast.VariableDefinition(
+                                variable=graphql_ast.Variable(graphql_ast.Name('name')),
+                                type=graphql_ast.NamedType(graphql_ast.Name('String')),
+                                default_value=None)],
                         selection_set=graphql_ast.SelectionSet(
                             selections=[
                                 graphql_ast.Field(
                                     name=graphql_ast.Name(value=field_name),
-                                    # TODO get these from get parameters
+                                    # TODO get these from get parameters (use variables instead of arguments?)
                                     arguments=[
                                         graphql_ast.Argument(name=graphql_ast.Name(value='name'),
-                                                             value=graphql_ast.StringValue(value='foo'))
+                                                             value=graphql_ast.Variable(graphql_ast.Name('name')))
                                     ],
                                     selection_set=field_selection_set
                                 )
@@ -84,7 +88,7 @@ class GraphQLREST(object):
                 ]
             )
 
-            execution_results = schema.execute(document_ast)
+            execution_results = schema.execute(document_ast, variable_values={'name': 'foo'})
 
             # TODO custom encoder that positions data[field_name] at data
             result, status_code = encode_execution_results([execution_results],
