@@ -39,7 +39,7 @@ class Query(graphene.ObjectType):
 
 @pytest.mark.parametrize('schema', [graphene.Schema(query=Query)])
 def test_query_hello_world(client):
-    response = client.get('/hello')
+    response = client.get('/hello?name=foo')
     assert response.status_code == 200
     assert response.json == {
         'data': {'hello': 'Hello foo'}
@@ -52,12 +52,13 @@ class Person(graphene.ObjectType):
 class CreatePerson(graphene.Mutation):
     class Arguments:
         name = graphene.String()
+        age = graphene.Int()
 
     ok = graphene.Boolean()
     person = graphene.Field(lambda: Person)
 
-    def mutate(self, info, name):
-        person = Person(name=name)
+    def mutate(self, info, name, age):
+        person = Person(name=name, age=age)
         ok = True
         return CreatePerson(person=person, ok=ok)
 
@@ -67,15 +68,15 @@ class MyMutations(graphene.ObjectType):
 
 
 @pytest.mark.parametrize('schema', [graphene.Schema(query=Query, mutation=MyMutations)])
-def test_mutation_create_person(client):
-    response = client.post('/createPerson', data={'name': 'foo'})
+def test_mutation_create_person(client, schema, app):
+    response = client.post('/createPerson', data={'name': 'foo', 'age': 20})
     assert response.status_code == 200
     assert response.json == {
         'data': {
             'createPerson': {
                 'person': {
                     'name': 'foo',
-                    # 'age' ...
+                    'age': 20
                 },
                 'ok': True
             }
