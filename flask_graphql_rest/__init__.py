@@ -3,11 +3,11 @@ from typing import Optional
 import flask
 import graphene
 import graphql.language.ast as graphql_ast
-from flask import Response
-from graphene.test import format_execution_result, default_format_error
-from graphql import GraphQLScalarType, GraphQLEnumType, GraphQLObjectType
+from flask import Response, request
+from graphene.test import default_format_error, format_execution_result
+from graphql import GraphQLEnumType, GraphQLObjectType, GraphQLScalarType
 from graphql_server import encode_execution_results, json_encode
-from flask import request
+
 
 class GraphQLREST(object):
     schema: graphene.Schema
@@ -58,11 +58,13 @@ class GraphQLREST(object):
             # for sub_field in
 
             return graphql_ast.SelectionSet(
-                selections=[
-                    graphql_ast.Field(name=graphql_ast.Name(value=name), selection_set=self._get_field_selection_set(sub_field, include_nodes)) for name, sub_field in field.type.fields.items()
+                    selections=[
+                        graphql_ast.Field(name=graphql_ast.Name(value=name),
+                                          selection_set=self._get_field_selection_set(sub_field, include_nodes)) for
+                        name, sub_field in field.type.fields.items()
 
-                    # graphql_ast.Field(name=graphql_ast.Name(value='hello'))
-                ]
+                        # graphql_ast.Field(name=graphql_ast.Name(value='hello'))
+                    ]
             )
 
         raise NotImplementedError
@@ -77,35 +79,35 @@ class GraphQLREST(object):
             variable = graphql_ast.Variable(name=graphql_ast.Name(value=arg_name))
             arguments.append(graphql_ast.Argument(name=graphql_ast.Name(value=arg_name), value=variable))
             variable_definitions.append(graphql_ast.VariableDefinition(
-                variable=variable,
-                type=graphql_ast.NamedType(name=graphql_ast.Name(value=arg_definition.type.name)),
-                # default_value=graphql_ast.Value(value=arg_definition.default_value)
+                    variable=variable,
+                    type=graphql_ast.NamedType(name=graphql_ast.Name(value=arg_definition.type.name)),
+                    # default_value=graphql_ast.Value(value=arg_definition.default_value)
             ))
 
         def view_func():
             document_ast = graphql_ast.Document(
-                [
-                    graphql_ast.OperationDefinition(
-                        operation='query',
-                        variable_definitions=variable_definitions,
-                        selection_set=graphql_ast.SelectionSet(
-                            selections=[
-                                graphql_ast.Field(
-                                    name=graphql_ast.Name(value=field_name),
-                                    arguments=arguments,
-                                    selection_set=field_selection_set
+                    [
+                        graphql_ast.OperationDefinition(
+                                operation='query',
+                                variable_definitions=variable_definitions,
+                                selection_set=graphql_ast.SelectionSet(
+                                        selections=[
+                                            graphql_ast.Field(
+                                                    name=graphql_ast.Name(value=field_name),
+                                                    arguments=arguments,
+                                                    selection_set=field_selection_set
+                                            )
+                                        ]
                                 )
-                            ]
                         )
-                    )
-                ]
+                    ]
             )
 
             variable_values = request.args
 
             execution_results = schema.execute(
-                document_ast,
-                variable_values=variable_values
+                    document_ast,
+                    variable_values=variable_values
             )
 
             # TODO custom encoder that positions data[field_name] at data
@@ -130,35 +132,35 @@ class GraphQLREST(object):
             variable = graphql_ast.Variable(name=graphql_ast.Name(value=arg_name))
             arguments.append(graphql_ast.Argument(name=graphql_ast.Name(value=arg_name), value=variable))
             variable_definitions.append(graphql_ast.VariableDefinition(
-                variable=variable,
-                type=graphql_ast.NamedType(name=graphql_ast.Name(value=arg_definition.type.name)),
-                default_value=arg_definition.default_value
+                    variable=variable,
+                    type=graphql_ast.NamedType(name=graphql_ast.Name(value=arg_definition.type.name)),
+                    default_value=arg_definition.default_value
             ))
 
         def view_func():
             document_ast = graphql_ast.Document(
-                [
-                    graphql_ast.OperationDefinition(
-                        operation='mutation',
-                        variable_definitions=variable_definitions,
-                        selection_set=graphql_ast.SelectionSet(
-                            selections=[
-                                graphql_ast.Field(
-                                    name=graphql_ast.Name(value=field_name),
-                                    arguments=arguments,
-                                    selection_set=field_selection_set
+                    [
+                        graphql_ast.OperationDefinition(
+                                operation='mutation',
+                                variable_definitions=variable_definitions,
+                                selection_set=graphql_ast.SelectionSet(
+                                        selections=[
+                                            graphql_ast.Field(
+                                                    name=graphql_ast.Name(value=field_name),
+                                                    arguments=arguments,
+                                                    selection_set=field_selection_set
+                                            )
+                                        ]
                                 )
-                            ]
                         )
-                    )
-                ]
+                    ]
             )
 
             variable_values = request.json
 
             execution_results = schema.execute(
-                document_ast,
-                variable_values=variable_values
+                    document_ast,
+                    variable_values=variable_values
             )
 
             # TODO custom encoder that positions data[field_name] at data

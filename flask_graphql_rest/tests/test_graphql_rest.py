@@ -45,9 +45,11 @@ def test_query_hello_world(client):
         'data': {'hello': 'Hello foo'}
     }
 
+
 class Person(graphene.ObjectType):
     name = graphene.String()
     age = graphene.Int()
+
 
 class CreatePerson(graphene.Mutation):
     class Arguments:
@@ -83,6 +85,8 @@ def test_mutation_create_person(client, schema, app):
         }
     }
 
+
+# TODO test with relay.Node fields (stand-alone, in list, nested)
 
 # class IntroduceShip(relay.ClientIDMutation):
 #
