@@ -5,8 +5,10 @@ import graphene
 import graphql.language.ast as graphql_ast
 from flask import Response, request
 from graphene.test import default_format_error, format_execution_result
-from graphql import GraphQLEnumType, GraphQLObjectType, GraphQLScalarType
+from graphql import GraphQLEnumType, GraphQLObjectType, GraphQLScalarType, GraphQLNonNull, GraphQLList
 from graphql_server import encode_execution_results, json_encode
+from graphene.types.definitions import GrapheneInterfaceType
+from graphene.relay import Connection
 
 
 class GraphQLREST(object):
@@ -24,7 +26,6 @@ class GraphQLREST(object):
 
         query_type = self.schema.get_query_type()
         if query_type:
-            print(query_type, query_type.fields)
             for field_name, field in query_type.fields.items():
                 endpoint = f'query.{query_type.name}.{field_name}'
 
@@ -46,42 +47,65 @@ class GraphQLREST(object):
     def format_result(self, result):
         return format_execution_result(result, default_format_error)
 
+    def get_return_type(self, return_type):
+        if isinstance(return_type, (GraphQLNonNull, GraphQLList)):
+            return self.get_return_type(return_type.of_type)
+
+        return return_type
+
     def _get_field_selection_set(self,
                                  field: graphene.Field,
-                                 include_nodes: bool = False) -> Optional[graphql_ast.SelectionSet]:
+                                 include_connection: bool = True) -> Optional[graphql_ast.SelectionSet]:
 
-        return_type = field.type
+
+
+        return_type = self.get_return_type(field.type)
+
         if isinstance(return_type, (GraphQLScalarType, GraphQLEnumType)):
             return None
-        elif isinstance(return_type, GraphQLObjectType):
-            # selections = []
-            # for sub_field in
+        elif isinstance(return_type, (GraphQLObjectType, GrapheneInterfaceType)):
+            all_selections = []
+
+            if issubclass(return_type.graphene_type, Connection):
+                if include_connection is False:
+                    return None
+                else:
+                    include_connection = False
+
+            for name, sub_field in return_type.fields.items():
+
+                sub_field_type = self.get_return_type(sub_field.type)
+
+                # check if nested connection should be included
+                if hasattr(sub_field_type, 'graphene_type') and issubclass(sub_field_type.graphene_type, Connection) and include_connection is False:
+                    continue
+
+                selection = graphql_ast.Field(name=graphql_ast.Name(value=name),
+                                              selection_set=self._get_field_selection_set(sub_field, include_connection=include_connection))
+
+                all_selections.append(selection)
 
             return graphql_ast.SelectionSet(
-                    selections=[
-                        graphql_ast.Field(name=graphql_ast.Name(value=name),
-                                          selection_set=self._get_field_selection_set(sub_field, include_nodes)) for
-                        name, sub_field in field.type.fields.items()
-
-                        # graphql_ast.Field(name=graphql_ast.Name(value='hello'))
-                    ]
+                    selections=all_selections
             )
 
         raise NotImplementedError
 
     def _get_query_view_func(self, field: graphene.Field, field_name: str):
         schema = self.schema
-        field_selection_set = self._get_field_selection_set(field, include_nodes=True)
+        field_selection_set = self._get_field_selection_set(field, include_connection=True)
         variable_definitions = []
         arguments = []
 
         for arg_name, arg_definition in field.args.items():
             variable = graphql_ast.Variable(name=graphql_ast.Name(value=arg_name))
             arguments.append(graphql_ast.Argument(name=graphql_ast.Name(value=arg_name), value=variable))
+
+            return_type = self.get_return_type(arg_definition.type)
+
             variable_definitions.append(graphql_ast.VariableDefinition(
                     variable=variable,
-                    type=graphql_ast.NamedType(name=graphql_ast.Name(value=arg_definition.type.name)),
-                    # default_value=graphql_ast.Value(value=arg_definition.default_value)
+                    type=graphql_ast.NamedType(name=graphql_ast.Name(value=return_type.name)),
             ))
 
         def view_func():
@@ -124,7 +148,7 @@ class GraphQLREST(object):
 
     def _get_mutation_view_func(self, field: graphene.Field, field_name: str):
         schema = self.schema
-        field_selection_set = self._get_field_selection_set(field, include_nodes=True)
+        field_selection_set = self._get_field_selection_set(field, include_connection=True)
         variable_definitions = []
         arguments = []
 
