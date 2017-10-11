@@ -4,10 +4,10 @@ import flask
 import graphene
 import graphql.language.ast as graphql_ast
 from flask import Response, request
-from graphene.relay import Connection
+from graphene.relay import Connection, Node
 from graphene.test import default_format_error, format_execution_result
 from graphene.types.definitions import GrapheneInterfaceType
-from graphql import GraphQLEnumType, GraphQLObjectType, GraphQLScalarType, GraphQLNonNull, GraphQLList
+from graphql import GraphQLEnumType, GraphQLObjectType, GraphQLScalarType, GraphQLNonNull, GraphQLList, GraphQLField
 from graphql_server import encode_execution_results, json_encode
 
 
@@ -45,8 +45,16 @@ class GraphQLREST(object):
 
         return return_type
 
+    def get_variable_type(self, return_type):
+        if isinstance(return_type, GraphQLNonNull):
+            return graphql_ast.NonNullType(type=self.get_variable_type(return_type.of_type))
+        elif isinstance(return_type, GraphQLList):
+            return graphql_ast.ListType(type=self.get_variable_type(return_type.of_type))
+        else:
+            return graphql_ast.NamedType(name=graphql_ast.Name(value=return_type.name))
+
     def _get_field_selection_set(self,
-                                 field: graphene.Field,
+                                 field: GraphQLField,
                                  include_connection: bool = True) -> Optional[graphql_ast.SelectionSet]:
         return_type = self.get_return_type(field.type)
 
@@ -84,21 +92,32 @@ class GraphQLREST(object):
 
     def _get_view_func(self, operation: str, field: graphene.Field, field_name: str):
         schema = self.schema
-        field_selection_set = self._get_field_selection_set(field, include_connection=True)
         variable_definitions = []
         arguments = []
 
         for arg_name, arg_definition in field.args.items():
             variable = graphql_ast.Variable(name=graphql_ast.Name(value=arg_name))
             arguments.append(graphql_ast.Argument(name=graphql_ast.Name(value=arg_name), value=variable))
-            return_type = self.get_return_type(arg_definition.type)
-
+            variable_type = self.get_variable_type(arg_definition.type)
             variable_definitions.append(graphql_ast.VariableDefinition(
                 variable=variable,
-                type=graphql_ast.NamedType(name=graphql_ast.Name(value=return_type.name)),
+                type=variable_type,
             ))
 
         def view_func():
+            variable_values = self.get_variable_values()
+
+            field_selection_set = self._get_field_selection_set(field, include_connection=True)
+
+            if hasattr(field.type, 'graphene_type') and issubclass(field.type.graphene_type, Node):
+                _type_name, _id = Node.from_global_id(variable_values['id'])
+                node_type = schema.get_type(_type_name)
+                inline_selection = graphql_ast.InlineFragment(
+                    type_condition=graphql_ast.NamedType(name=graphql_ast.Name(value=_type_name)),
+                    selection_set=self._get_field_selection_set(GraphQLField(node_type), include_connection=True)
+                )
+                field_selection_set.selections.append(inline_selection)
+
             document_ast = graphql_ast.Document(
                 [
                     graphql_ast.OperationDefinition(
@@ -119,7 +138,7 @@ class GraphQLREST(object):
 
             execution_results = schema.execute(
                 document_ast,
-                variable_values=self.get_variable_values()
+                variable_values=variable_values
             )
 
             # TODO custom encoder that positions data[field_name] at data

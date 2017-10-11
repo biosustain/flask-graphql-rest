@@ -189,7 +189,28 @@ def test_mutation_create_person(client):
 #
 
 
-def test_query_stand_alone_node(client, models, sa):
+def test_query_node(client, models, sa):
+    publisher = models.Publisher(name='Packt')
+    sa.session.add(publisher)
+
+    author = models.Author(name='Tarek Ziade')
+    sa.session.add(author)
+    sa.session.commit()
+
+    book = models.Book(title='Python Microservices Development', publisher=publisher)
+    book.authors.append(author)
+    sa.session.add(book)
+
+    sa.session.commit()
+
+    node_id = relay.Node.to_global_id('Book', book.id)
+    response = client.get(f'/node?id={node_id}')
+    assert response.status_code == 200
+    assert response.json['data']['node']['title'] == book.title
+    assert response.json['data']['node']['publisher']['name'] == publisher.name
+
+
+def test_query_connection(client, models, sa):
     publisher_1 = models.Publisher(name='Packt')
     publisher_2 = models.Publisher(name='O\'Reilly Media')
     sa.session.add(publisher_1)
