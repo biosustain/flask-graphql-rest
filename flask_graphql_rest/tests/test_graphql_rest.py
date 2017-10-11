@@ -168,27 +168,6 @@ def test_mutation_create_person(client):
     }
 
 
-# TODO test with relay.Node fields (stand-alone, in list, nested)
-
-# class IntroduceShip(relay.ClientIDMutation):
-#
-#     class Input:
-#         ship_name = graphene.String(required=True)
-#         faction_id = graphene.String(required=True)
-#
-#     ship = graphene.Field(Ship)
-#     faction = graphene.Field(Faction)
-#
-#     @classmethod
-#     def mutate_and_get_payload(cls, root, info, **input):
-#         ship_name = input.ship_name
-#         faction_id = input.faction_id
-#         ship = create_ship(ship_name, faction_id)
-#         faction = get_faction(faction_id)
-#         return IntroduceShip(ship=ship, faction=faction)
-#
-
-
 def test_query_node(client, models, sa):
     publisher = models.Publisher(name='Packt')
     sa.session.add(publisher)
@@ -203,11 +182,43 @@ def test_query_node(client, models, sa):
 
     sa.session.commit()
 
-    node_id = relay.Node.to_global_id('Book', book.id)
-    response = client.get(f'/node?id={node_id}')
+    publisher_node_id = relay.Node.to_global_id('Publisher', publisher.id)
+    author_node_id = relay.Node.to_global_id('Author', author.id)
+    book_node_id = relay.Node.to_global_id('Book', book.id)
+
+    # Test for Publisher node
+    response = client.get(f'/node?id={publisher_node_id}')
     assert response.status_code == 200
+    assert response.json['data']['node']['id'] == publisher_node_id
+    assert response.json['data']['node']['name'] == publisher.name
+    assert len(response.json['data']['node']['books']['edges']) == 1
+
+    # nested nodes in `to_many` relationship should return only `id` field
+    assert response.json['data']['node']['books']['edges'][0]['node'] == {'id': book_node_id}
+
+    # Test for Author node
+    response = client.get(f'/node?id={author_node_id}')
+    assert response.status_code == 200
+    assert response.json['data']['node']['id'] == author_node_id
+    assert response.json['data']['node']['name'] == author.name
+    assert len(response.json['data']['node']['books']['edges']) == 1
+
+    # nested nodes in `to_many` relationship should return only `id` field
+    assert response.json['data']['node']['books']['edges'][0]['node'] == {'id': book_node_id}
+
+    # Test for Book node
+    response = client.get(f'/node?id={book_node_id}')
+    assert response.status_code == 200
+    assert response.json['data']['node']['id'] == book_node_id
     assert response.json['data']['node']['title'] == book.title
-    assert response.json['data']['node']['publisher']['name'] == publisher.name
+
+    # nested node in `to_one` relationship should return only `id` field
+    assert response.json['data']['node']['publisher'] == {'id': publisher_node_id}
+
+    assert len(response.json['data']['node']['authors']['edges']) == 1
+
+    # nested nodes in `to_many` relationship should return only `id` field
+    assert response.json['data']['node']['authors']['edges'][0]['node'] == {'id': author_node_id}
 
 
 def test_query_connection(client, models, sa):
@@ -232,5 +243,40 @@ def test_query_connection(client, models, sa):
 
     response = client.get('/books')
 
+    # status code should be `OK`
     assert response.status_code == 200
     assert len(response.json['data']['books']['edges']) == 2
+    assert response.json['data']['books']['pageInfo']['hasNextPage'] is False
+    assert response.json['data']['books']['pageInfo']['hasPreviousPage'] is False
+    assert response.json['data']['books']['edges'][0]['node']['title'] == book_1.title
+    assert response.json['data']['books']['edges'][1]['node']['title'] == book_2.title
+
+    # nested node in `to_one` relationship should return only `id` field
+    assert response.json['data']['books']['edges'][0]['node']['publisher'] == {
+        'id': relay.Node.to_global_id('Publisher', publisher_1.id)}
+    assert response.json['data']['books']['edges'][1]['node']['publisher'] == {
+        'id': relay.Node.to_global_id('Publisher', publisher_2.id)}
+
+    # nested nodes in `to_many` relationship should return only `id` field
+    assert len(response.json['data']['books']['edges'][0]['node']['authors']['edges']) == 1
+    assert response.json['data']['books']['edges'][0]['node']['authors']['edges'][0]['node'] == {
+        'id': relay.Node.to_global_id('Author', author_1.id)}
+    assert len(response.json['data']['books']['edges'][1]['node']['authors']['edges']) == 1
+    assert response.json['data']['books']['edges'][1]['node']['authors']['edges'][0]['node'] == {
+        'id': relay.Node.to_global_id('Author', author_2.id)}
+
+    # Test pagination filters, limit by first
+    response = client.get('/books?first=1')
+    assert response.status_code == 200
+    assert len(response.json['data']['books']['edges']) == 1
+    assert response.json['data']['books']['pageInfo']['hasNextPage'] is True
+    assert response.json['data']['books']['pageInfo']['hasPreviousPage'] is False
+    assert response.json['data']['books']['edges'][0]['node']['title'] == book_1.title
+
+    # Test pagination filters, limit by last
+    response = client.get('/books?last=1')
+    assert response.status_code == 200
+    assert len(response.json['data']['books']['edges']) == 1
+    assert response.json['data']['books']['pageInfo']['hasNextPage'] is False
+    assert response.json['data']['books']['pageInfo']['hasPreviousPage'] is True
+    assert response.json['data']['books']['edges'][0]['node']['title'] == book_2.title

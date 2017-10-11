@@ -1,13 +1,14 @@
-from typing import Optional
+from typing import Optional, Union
 
 import flask
 import graphene
 import graphql.language.ast as graphql_ast
 from flask import Response, request
-from graphene.relay import Connection, Node
+from graphene.relay import Node
 from graphene.test import default_format_error, format_execution_result
 from graphene.types.definitions import GrapheneInterfaceType
 from graphql import GraphQLEnumType, GraphQLObjectType, GraphQLScalarType, GraphQLNonNull, GraphQLList, GraphQLField
+from graphql.type.definition import GraphQLType
 from graphql_server import encode_execution_results, json_encode
 
 
@@ -29,6 +30,9 @@ class GraphQLREST(object):
         )
 
         for operation_name, operation_type, http_method in operations_list:
+            if operation_type is None:
+                continue
+
             for field_name, field in operation_type.fields.items():
                 endpoint = f'{operation_name}.{operation_type.name}.{field_name}'
                 app.add_url_rule(f'/{field_name}',
@@ -39,13 +43,13 @@ class GraphQLREST(object):
     def format_result(self, result):
         return format_execution_result(result, default_format_error)
 
-    def get_return_type(self, return_type):
+    def get_return_type(self, return_type: GraphQLType):
         if isinstance(return_type, (GraphQLNonNull, GraphQLList)):
             return self.get_return_type(return_type.of_type)
 
         return return_type
 
-    def get_variable_type(self, return_type):
+    def get_variable_type(self, return_type: GraphQLType):
         if isinstance(return_type, GraphQLNonNull):
             return graphql_ast.NonNullType(type=self.get_variable_type(return_type.of_type))
         elif isinstance(return_type, GraphQLList):
@@ -53,9 +57,18 @@ class GraphQLREST(object):
         else:
             return graphql_ast.NamedType(name=graphql_ast.Name(value=return_type.name))
 
+    @staticmethod
+    def is_node_type(graphene_type: Union[GraphQLObjectType, GrapheneInterfaceType]):
+        if issubclass(graphene_type.graphene_type, Node):
+            return True
+        elif not hasattr(graphene_type, 'interfaces'):
+            return False
+
+        return any(map(lambda interface: issubclass(interface.graphene_type, Node), graphene_type.interfaces))
+
     def _get_field_selection_set(self,
                                  field: GraphQLField,
-                                 include_connection: bool = True) -> Optional[graphql_ast.SelectionSet]:
+                                 include_node: bool = True) -> Optional[graphql_ast.SelectionSet]:
         return_type = self.get_return_type(field.type)
 
         if isinstance(return_type, (GraphQLScalarType, GraphQLEnumType)):
@@ -63,25 +76,19 @@ class GraphQLREST(object):
         elif isinstance(return_type, (GraphQLObjectType, GrapheneInterfaceType)):
             all_selections = []
 
-            if issubclass(return_type.graphene_type, Connection):
-                if include_connection is False:
-                    return None
+            sub_fields = return_type.fields.items()
+
+            if self.is_node_type(return_type):
+                if include_node is False:
+                    sub_fields = [('id', return_type.fields['id'])]
                 else:
-                    include_connection = False
+                    # disable full rendering of nested nodes to avoid recursion
+                    include_node = False
 
-            for name, sub_field in return_type.fields.items():
-
-                sub_field_type = self.get_return_type(sub_field.type)
-
-                # check if nested connection should be included
-                if hasattr(sub_field_type, 'graphene_type') and issubclass(sub_field_type.graphene_type,
-                                                                           Connection) and include_connection is False:
-                    continue
-
+            for name, sub_field in sub_fields:
                 selection = graphql_ast.Field(name=graphql_ast.Name(value=name),
                                               selection_set=self._get_field_selection_set(sub_field,
-                                                                                          include_connection=include_connection))
-
+                                                                                          include_node=include_node))
                 all_selections.append(selection)
 
             return graphql_ast.SelectionSet(
@@ -90,7 +97,7 @@ class GraphQLREST(object):
 
         raise NotImplementedError
 
-    def _get_view_func(self, operation: str, field: graphene.Field, field_name: str):
+    def _get_view_func(self, operation: str, field: GraphQLField, field_name: str):
         schema = self.schema
         variable_definitions = []
         arguments = []
@@ -107,14 +114,14 @@ class GraphQLREST(object):
         def view_func():
             variable_values = self.get_variable_values()
 
-            field_selection_set = self._get_field_selection_set(field, include_connection=True)
+            field_selection_set = self._get_field_selection_set(field, include_node=True)
 
             if hasattr(field.type, 'graphene_type') and issubclass(field.type.graphene_type, Node):
                 _type_name, _id = Node.from_global_id(variable_values['id'])
                 node_type = schema.get_type(_type_name)
                 inline_selection = graphql_ast.InlineFragment(
                     type_condition=graphql_ast.NamedType(name=graphql_ast.Name(value=_type_name)),
-                    selection_set=self._get_field_selection_set(GraphQLField(node_type), include_connection=True)
+                    selection_set=self._get_field_selection_set(GraphQLField(node_type), include_node=True)
                 )
                 field_selection_set.selections.append(inline_selection)
 
