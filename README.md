@@ -84,12 +84,7 @@ graphene_rest.init_app(app)
 Now we can use [HTTPie](https://github.com/jakubroztocil/httpie) to test these newly created end points:
 #### Fetch list of `Book` objects
 ```bash
-user@localhost:~# http ":8005/books"
-HTTP/1.0 200 OK
-Content-Length: 487
-Content-Type: application/json
-Date: Thu, 12 Oct 2017 07:42:58 GMT
-Server: Werkzeug/0.12.2 Python/3.6.2
+http ":8005/books"
 ```
 ```json
 {
@@ -131,12 +126,7 @@ Server: Werkzeug/0.12.2 Python/3.6.2
 ```
 #### Fetch a `Book` object by node id
 ```bash
-user@localhost:~# http ":8005/node?id=Qm9vazox"
-HTTP/1.0 200 OK
-Content-Length: 132
-Content-Type: application/json
-Date: Thu, 12 Oct 2017 07:43:23 GMT
-Server: Werkzeug/0.12.2 Python/3.6.2
+http ":8005/node?id=Qm9vazox"
 ```
 ```json
 {
@@ -155,12 +145,7 @@ Server: Werkzeug/0.12.2 Python/3.6.2
 
 #### Fetch a `Publisher` object by node id
 ```bash
-user@localhost:~# http ":8005/node?id=UHVibGlzaGVyOjE="
-HTTP/1.0 200 OK
-Content-Length: 312
-Content-Type: application/json
-Date: Thu, 12 Oct 2017 07:44:29 GMT
-Server: Werkzeug/0.12.2 Python/3.6.2
+http ":8005/node?id=UHVibGlzaGVyOjE="
 ```
 ```json
 {
