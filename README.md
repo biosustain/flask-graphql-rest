@@ -1,6 +1,8 @@
 # Flask-GraphQL-REST
 Flask extension to expose a GraphQL API as REST API
 
+[![Build Status](https://img.shields.io/travis/biosustain/flask-graphql-rest/master.svg?style=flat-square)](https://travis-ci.org/biosustain/flask-graphql-rest)
+
 ### Features
 - Generates RESTful endpoints for all query and mutation operations in a GraphQL schema
 - Supports GraphQL Relay
